@@ -1,0 +1,115 @@
+alias Cause S0;
+alias VPagenum S1;
+alias Ip_addr S2;
+alias physicalSP S3;		
+alias currentPID S4;
+alias currentPTBR S5;
+alias i S6;
+alias procPTBR S7;
+alias page S8;
+alias block S9;
+alias j S10;
+alias newPID S11;
+alias currentPCB S12;
+alias newPCB S13;
+alias diskBlock S14;
+
+
+
+
+Cause = EFR % 10;				                               // Gets value of cause field 
+VPagenum = (EFR / 10) % 100;                                   // Gets value of BadVAddr 
+Ip_addr = (EFR/1000);			                               // Gets value of IP at the point of exception
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+currentPID = (PTBR - 1024) / 8;
+currentPTBR = PAGE_TABLE + currentPID * 8;
+
+
+
+
+
+//******************if page fault not occured*****************************//
+if(Cause!=0 || [currentPTBR + 2 * VPagenum]==-1) then          
+       inline "JMP 11776";
+endif;
+
+
+
+
+//*******************page facult occured*********************************//
+if(Cause==0) then                                              
+	i = 25;
+	while(i<64) do                                                 //we will search for a free page
+		if([ MEM_LIST + i]==0) then
+			[ MEM_LIST + i]=[ MEM_LIST + i] + 1;
+			break;
+		endif;
+		i = i + 1;
+	endwhile;
+
+	if(i==64) then                                               // no page found page replacement used
+		j = -1;
+		procPTBR = PAGE_TABLE-8;
+		while(j<32) do
+			j = j + 1;
+			procPTBR = procPTBR + 8;
+			if(j==currentPID || [READY_LIST + 32*j]==0) then          
+				continue;
+			endif;
+			page = procPTBR;
+			while(page<procPTBR + 6) do                              //check all pages except stack
+				if([page+1]=="01") then
+					block = 448;
+					while(block<512) do                                //check for swap blocks
+						if([DISK_LIST+block]==0) then
+							i = [page];                                //copy the physical page in i
+							store([page],block);                       //store the data in disk block
+							[DISK_LIST+block] = 1;                     //set it to used
+							[page] = block;                            //give that block number
+							[page+1] = "00";                           //set validitiy 00
+							j = 32;                                    //set j=32 to break loop
+							break;
+						endif;
+						block = block + 1;
+					endwhile;
+
+					if(block==512) then                                //no swap block available exit
+						inline "JMP 11776";
+					endif;
+					break;
+
+				endif;
+				if([page+1]=="10"&&[MEM_LIST+[page]]==1) then          //if refernece bit is 0 make it 1 and go to next page
+					[page+1]="00";
+				endif;
+				if([page+1]=="11"&&[MEM_LIST+[page]]==1) then
+					[page+1]="01";
+					continue;
+				endif;
+				page = page + 2;
+			endwhile;
+		endwhile;
+	endif;
+endif;
+
+
+
+
+diskBlock = [currentPTBR + 2 * VPagenum];                               //find the disk block which was stored earlier
+store(6,20);
+
+
+load(i,diskBlock);                                                       //i already contains page number hence load it from diskblock
+if(diskBlock>=448 && diskBlock<=511) then
+	[DISK_LIST + diskBlock] = [DISK_LIST + diskBlock] - 1;
+endif;
+
+[currentPTBR + 2 * VPagenum] = i;                                        //keep that value inside
+[currentPTBR + 2 * VPagenum + 1] = "11";                                 //set auxiliary as "11"
+
+SP = SP + 1;                                                            //for putting IP_addr on top of stack
+
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+[physicalSP] = Ip_addr;
+
+ireturn;

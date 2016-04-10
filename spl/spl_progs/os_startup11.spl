@@ -1,0 +1,86 @@
+print "OS START";
+load(1,0);                             //load os_startup code
+
+load(7,1);                             //OS exception Handler
+load(8,2);
+
+load(9,3);                             //Timer interrupt
+load(10,4);
+
+load(11,5);                            //Interrupt 1 Handler
+load(12,6);
+
+load(13,7);                            //Interrupt 2 Handler
+load(14,8);
+
+load(15,9);                            //Interrupt 3 Handler
+load(16,10);
+
+load(17,11);                           //Interrupt 4 Handler
+load(18,12);
+
+load(19,13);                           //Interrupt 5 Handler
+load(20,14);
+
+load(21,15);                           //Interrupt 6 Handler
+load(22,16);
+
+load(23,17);                           //Interrupt 7 Handler
+load(24,18);
+
+load (5,19);                          //load FAT table
+
+load(6,20);                           //load disk free list
+
+
+alias count S0;
+
+count=0;                 
+while(count<=28) do                    //pages 0-24 are reserved for operating system and 25-28 are reserved for INIT hence they are
+     [1280+count]=1;                   //needed to be initialised  to be 1 indicating used
+     count=count+1;
+endwhile;
+
+while(count<=63) do                    //pages from 29-63 are free for process uses and hence needed to be nitialised 0 indicating unused
+     [1280+count]=0;
+     count=count+1;
+endwhile;
+
+count=0;
+while(count<32) do                    //Set state field of every process to be 0 in PCB 
+   [READY_LIST+32*count+1]=0;
+   count=count+1;
+endwhile;
+
+// Process:1(INIT)
+
+[READY_LIST + 0] = 0; 
+
+load(25,21);
+load(26,22);
+load(27,23);
+
+PTBR = 1024; 
+
+PTLR = 4; 
+
+[PTBR + 0] = 25; 
+[PTBR + 1] = "01";
+[PTBR + 2] = -1;
+[PTBR + 3] = "00";
+
+[PTBR + 4] =-1;
+[PTBR + 5] = "00";
+[PTBR + 6] = 28;     //Stack Page
+[PTBR + 7] = "01";
+
+[READY_LIST + 1] = 2;
+[READY_LIST + 31] =0; 
+
+SP = 3 * 512; 
+
+[28 * 512] = 0;
+
+print "OS END";
+ireturn; 
+

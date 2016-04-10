@@ -1,0 +1,151 @@
+//print "INSIDE INT3";
+
+//IMPLMENTATION OF SEEK() SYSTEM CALL
+
+alias physicalSP S0;
+physicalSP=([1024+2*(SP/512)]*512)+(SP%512);
+
+alias systemcallnumber S1;                                       //Get the system call number
+systemcallnumber=[physicalSP-1];
+
+alias returnvalue S2;                                            //Empty register to store return value
+
+alias newLseek S3;                                         //get the newLseek
+newLseek=[physicalSP-3];                                      
+
+alias fd S4;                                               //Get the fd
+fd=[physicalSP-4];
+
+alias count S5;
+
+
+if(systemcallnumber==6) then
+     //print"In seek()";
+     count=0;
+     while(count<8) do
+         if(fd==count) then                         //checking if file descriptor is valid
+              break;
+         endif;
+         count=count+1;
+     endwhile;
+     
+     if(count==8) then
+         returnvalue=-1;                                      //if not valid return -1 as failure
+         [physicalSP-2]=returnvalue;
+         ireturn;
+     endif;
+     
+     alias currentPID S6;
+     currentPID=(PTBR-1024)/8;
+     
+     alias systemTabIndex S7;
+     
+     if([1536+32*currentPID+15+2*fd]==-1) then             //checking per-process open file table and getting system-wide open
+         returnvalue=-1;                                            //file table index if it is valid
+         [physicalSP-2]=returnvalue;
+         ireturn;
+     else
+         systemTabIndex=[1536+32*currentPID+15+2*fd];      //if valid got system-wide open file table
+     endif;
+     
+     alias fatIndex S8;
+     fatIndex=[1344+2*systemTabIndex];                            //get the FAT Index from system wide open file table indexing
+     
+     alias fileSize S9;
+     fileSize=[FAT+8*fatIndex+1];                                  //got the fileSize
+     
+     
+
+     if(newLseek>=0&&newLseek<=fileSize) then                     //check the validity of newLseek provided
+            [1536+32*currentPID+15+2*fd+1]=newLseek;     //if valid change LSEEK previously to newLseek
+     else
+         returnvalue=-1;
+         [physicalSP-2]=returnvalue;
+         //print "2";
+         ireturn;
+     endif;
+     
+     returnvalue=0;
+     [physicalSP-2]=returnvalue;
+     //print"sucess";
+     ireturn;
+     
+endif;
+
+
+
+//IMPLEMENTATION OF READ() SYSTEM CALL
+
+alias wordRead S3;
+
+
+if(systemcallnumber==7) then
+    //print"In read()";
+    count=0;
+     while(count<8) do
+         if(fd==count) then                               //checking if file descriptor is valid
+              break;
+         endif;
+         count=count+1;
+     endwhile;
+     
+     if(count==8) then
+         returnvalue=-1;                                      //if not valid return -1 as failure
+         [physicalSP-2]=returnvalue;
+         ireturn;
+     endif;
+     
+     alias currentPID S6;
+     currentPID=(PTBR-1024)/8;
+     
+     alias systemTabIndex S7;
+     
+     if([1536+32*currentPID+15+2*fd]==-1) then             //checking per-process open file table and getting system-wide open
+         returnvalue=-1;                                            //file table index if it is valid
+         [physicalSP-2]=returnvalue;
+         ireturn;
+     else
+         systemTabIndex=[1536+32*currentPID+15+2*fd];      //if valid got system-wide open file table
+     endif;
+           
+     alias lseekPos S8;
+     lseekPos=[1536+32*currentPID+15+2*fd+1];          //store the LSEEK position
+     
+     alias fatIndex S9;
+     fatIndex=[1344+2*systemTabIndex];                            //get the FAT Index from system wide open file table indexing
+     
+     alias basicBlock S10;
+     basicBlock=[FAT+8*fatIndex+2];                             //got the Basic Block
+     
+     load(1,basicBlock);                                        //load basic Block to scratchpad
+     
+     alias fileSize S11;
+     fileSize=[FAT+8*fatIndex+1];                               //getting file size
+     
+     if(lseekPos==fileSize) then                               //checking if lseek is at end of file nothing to read just return -1
+           returnvalue=-1;
+           [physicalSP-2]=returnvalue;
+           ireturn;
+     endif;
+     
+     alias dataBlock S12;
+     dataBlock=[512+(lseekPos/512)];                 //we got data block from both methods
+     
+     load(1,dataBlock);                                         //load data block
+     
+     [physicalSP-3]=[512+(lseekPos%512)];              //get offset from where to read and store it as argument2
+     
+     
+     [1536+32*currentPID+15+2*fd+1]=[1536+32*currentPID+15+2*fd+1]+1;  //increment LSEEK by 1 to read it from next
+     
+     returnvalue=0;
+     [physicalSP-2]=returnvalue;
+     //print"success";
+      
+      ireturn;
+  
+endif;      
+      
+          
+     
+

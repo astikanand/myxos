@@ -1,0 +1,177 @@
+//print "INSIDE INT1";
+
+//IMPLEMENTATION OF CREATE() SYSTEM CALL
+
+alias physicalSP S0;
+physicalSP=([1024+2*(SP/512)]*512)+(SP%512);
+
+alias systemcallnumber S1;                                       //Get the system call number
+systemcallnumber=[physicalSP-1];
+
+alias returnvalue S2;                                            //Empty register to store return value
+
+alias argument1 S3;                                              //Get the argument1 here the "Filename"
+argument1=[physicalSP-3];
+
+alias count S4;
+
+
+if(systemcallnumber==1) then 
+      count=0;
+      //print"In create()";                                   
+      while(count<64) do                                 //check if the file already exists
+            if([FAT+8*count]==argument1) then
+                   returnvalue=0;
+                   [physicalSP-2]=returnvalue;
+                  // print"al success";
+                   ireturn;
+            endif;
+            count=count+1;
+      endwhile;             
+                  
+
+      count=24;                                       //File not exist,Search the Disk Free List to see space for creating new file
+      while(count<=447) do
+           if([512*6+count]==0) then
+                  break;
+           endif;
+           count=count+1;
+      endwhile;
+
+      if(count==448) then                                       //No Space,file can not be created
+            returnvalue=-1;
+            [physicalSP-2]=returnvalue;
+            ireturn;
+      endif;      
+               
+      alias freeBlock S5;                                       //If space is there in disk,we got the free block
+      freeBlock=count;                                          //This block is used as BASIC BLOCK
+
+
+
+      count=0;                                                 //Now we have to check FAT if No. of files<=64
+      while(count<64) do                                       //Coz at max we can have only 64 files
+           if([FAT+8*count+2]==-1) then                        //Basic Block is empty,Ready to create new file
+                 [FAT+8*count+0]=argument1;
+                 [FAT+8*count+1]=0;                           //File Size=0 initialised
+                 [FAT+8*count+2]=freeBlock;                   //Basic Block assigned value
+                 returnvalue=0;
+                 break;
+          endif;
+          count=count+1;
+      endwhile;
+      
+      if(count==64) then                                      //Already 64 files exist LIMIT EXCEED
+          returnvalue=-1;
+          [physicalSP-2]=returnvalue;
+          ireturn; 
+      endif;
+      
+      
+      load(1,freeBlock);                                     //Load BASIC BLOCK in "SCRATCHPAD" for editing  
+      
+      count=0;
+      while(count<512) do                                    //As of now file doesnt have any data block hence make every data block=-1
+            [512+count]=-1;
+            count=count+1;
+      endwhile; 
+      
+      store(1,freeBlock);                                   //Saved changes Store it back to disk
+      
+      [512*6+freeBlock]=1;                                  //Set this block as used
+      
+      store(5,19);                                          //Saved changes is stored back to disk
+      store(6,20);                                 
+      
+      returnvalue=0;
+      [physicalSP-2]=returnvalue;
+      //print"End create()";
+      //print"success";
+      
+      ireturn; 
+endif;      
+
+
+//IMPLEMENTATION OF DELETE SYSTEM() CALL
+
+
+if(systemcallnumber==4) then
+     //print "In delete()";
+     while(count < 64) do                                   //checking if the file exists
+         if([FAT+8*count]==argument1) then      
+                break;
+         endif;
+         count=count+1;
+     endwhile;
+     
+     alias fatIndex S6;
+       
+     if(count==64) then
+         returnvalue=-1;                                 //if not exists; return -1 failure
+         [physicalSP-2]=returnvalue;
+         ireturn;     
+    else
+        fatIndex=count;                                  //if exists; we got the fat index
+    endif;
+    
+    
+    count=0;
+    while(count<64) do
+         if([1344+2*count]==fatIndex) then             // check if file is opened
+              returnvalue=-1;                           //if file is opened; it cant be deleted
+              [physicalSP-2]=returnvalue;
+              ireturn;
+         endif;
+         count=count+1;
+    endwhile;
+    
+    
+    alias basicBlock S7;                              
+    basicBlock=[FAT+8*fatIndex+2];                   //got the basic block
+    
+    
+     
+    count=0;
+    alias dataBlock S8;
+    alias j S9;
+    while(count<256) do
+         load(1,basicBlock);                              //load the basic block
+         dataBlock=[512+count];
+         if(dataBlock != -1)  then                         //getting the data block from basic block
+           load(1,dataBlock);                               //load the data block
+           j=0;
+           while(j<512) do
+              [512+count]="";                //making every word of that data block to be ""(EMPTY STRING)
+              j=j+1;
+           endwhile;
+           store(1,dataBlock);                        //save the block to disk
+           [512*6+dataBlock]=0;                       // make entry in disk free list for data block to be unused that is 0
+         endif;
+          count=count+1;
+    endwhile; 
+    
+    count=0;
+    load(1,basicBlock);
+    while(count<256) do                           //now as data blocks erased delete all the entries in basic block
+         [512+count]="";
+         count=count+1;
+    endwhile;
+    
+    store(1,basicBlock);                          //store back/save the basic block to disk
+    
+    [512*6+basicBlock]=0;                         //make the disk free list entry 0 for basic block
+    
+    [FAT+8*fatIndex]=-1;                          //Invalidate FAT name field
+    [FAT+8*fatIndex+1]=-1;                        //Invalidate FAT size field
+    [FAT+8*fatIndex+2]=-1;                        //Invalidate FAT Basic Block field
+    
+    store(5,19);                                  //save the FAT to disk
+    store(6,20);                                  //Save disk free list to disk
+    
+    returnvalue=0;
+    [physicalSP-2]=returnvalue;
+    //print"success";
+    ireturn;
+    
+endif;
+         

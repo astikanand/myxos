@@ -1,0 +1,152 @@
+//print "INSIDE INT2";
+
+//IMPLEMENTATION OF OPEN() SYSTEM CALL
+
+alias physicalSP S0;
+physicalSP=([1024+2*(SP/512)]*512)+(SP%512);
+
+alias systemcallnumber S1;                                       //Get the system call number
+systemcallnumber=[physicalSP-1];
+
+alias returnvalue S2;                                            //Empty register to store return value
+
+alias argument1 S3;                                              //Get the argument1 here the "Filename"
+argument1=[physicalSP-3];
+
+alias count S4;
+count=0;
+
+alias fatIndex S5;
+
+if(systemcallnumber==2) then
+      //print"In Open()";                                    
+      while(count<64) do                                 //check if the file exists
+            if([FAT+8*count]==argument1) then
+                  fatIndex=count;                      //if file exists; we hav got the FAT Index of that file
+                  break;
+            endif;
+            count=count+1;
+      endwhile; 
+      
+      
+      if(count==64) then                                // file doesnt exists we cant open the file which doesnt exist
+            returnvalue=-1;
+            [physicalSP-2]=returnvalue;
+            ireturn;
+      endif;
+      
+      alias systemTabIndex S6;                             
+      count=0;                                            
+      while(count<64) do                               //file exists we are searching for that FAT Index in 
+           if([1344+2*count]==fatIndex) then          //system-wide open file table to know whether that file is already opened
+                 systemTabIndex=count;               //if file is opened;we got the index in system-wide open file table for that file Index
+                 break;
+           endif;
+           count=count+1;
+      endwhile;
+      
+      if(count==64) then                              //file is not opened earlier we have to open
+          count=0;
+          while(count<64) do                          //we are searching for a free entry in system-wide open file table
+              if([1344+2*count]==-1) then
+                 systemTabIndex=count;                //if free entry exists; we got the index
+                 break;
+              endif;
+              count=count+1;
+          endwhile;
+          
+          if(count==64) then
+              returnvalue=-1;                          //if free entry not exists we cant open file
+              [physicalSP-2]=returnvalue;
+              ireturn;
+          endif;
+      endif;
+      
+      alias currentPID S7;                           //finding the PID of current process
+      currentPID=(PTBR-1024)/8;
+      
+      alias processTabIndex S8;
+      
+      count=0;
+      while(count<8) do                                      //we are searching for a free entry in per-process open file table
+          if([1536+currentPID*32+15+count*2]==-1) then
+                 processTabIndex=count;
+                 break;
+          endif;
+          count=count+1;
+      endwhile;
+      
+      if(count==8) then
+           returnvalue=-1;
+           [physicalSP-2]=returnvalue;
+           ireturn;
+      endif;
+      
+      
+      [1536+currentPID*32+15+2*processTabIndex]=systemTabIndex;  //per-process open file table modified
+      [1536+currentPID*32+15+2*processTabIndex+1]=0;             //LSEEK made 0
+      
+      
+      [1344+2*systemTabIndex]=fatIndex;                             //system-wide open file table modified
+      [1344+2*systemTabIndex+1]=[1344+2*systemTabIndex]+1;          // count increased by 1
+      
+      returnvalue=processTabIndex;
+      [physicalSP-2]=returnvalue;
+     //print"success";
+      
+      ireturn;
+
+endif;
+
+
+// IMPLEMENTATION OF CLOSE() SYSTEM CALL 
+
+count=0;
+if(systemcallnumber==3) then
+    //print"In close()";
+    while(count<8) do                          //checking if the file decriptor is valid i.e b/w 0 to 7 or not
+        if(argument1==count) then
+            break;
+        endif;
+        count=count+1;
+    endwhile;
+    
+    if(count==8) then
+        returnvalue=-1;                      //filedescriptor not valid return -1 indicating failure
+        [physicalSP-2]=returnvalue;     
+        ireturn;
+    endif;
+    
+    alias getPID S9;
+    getPID=(PTBR-1024)/8;                                 //Get PID of current process
+    
+    alias systemTabIndex S10;
+       
+       
+    if([1536+getPID*32+15+2*argument1]==-1) then      //check file descriptor has system-wide open file table index
+        returnvalue=-1;
+        [physicalSP-2]=returnvalue;
+        //print"fail"; 
+        ireturn;
+    else
+        systemTabIndex=[1536+getPID*32+15+2*argument1];                           //system wide-open open file table index
+    endif;
+    
+    [1344+2*systemTabIndex+1]=[1344+2*systemTabIndex+1]-1;    //decrement file open count by 1 in system wide-open file table
+    
+    if([1344+2*systemTabIndex+1]==0) then
+           [1344+2*systemTabIndex]=-1;                       // count=0 means file is not open invalidate the entry by setting FAT index=-1
+    endif;
+    
+     
+    [1536+getPID*32+15+count*argument1]=-1;             //now for closing the file make per-process open file table entry fields=-1
+    [1536+getPID*32+15+count*argument1+1]=-1;
+    
+    returnvalue=0;                                         //file successfully closed
+    [physicalSP-2]=returnvalue;
+    //print"sucess";
+    
+    ireturn;
+    
+endif;    
+            

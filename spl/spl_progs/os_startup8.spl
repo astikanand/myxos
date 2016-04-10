@@ -1,0 +1,93 @@
+print "OS Start";
+
+//load Os_startup code
+load(1,0);
+
+//OS exception Handler
+load(7,1);
+load(8,2);
+
+//Timer interrupt
+load(9,3);
+load(10,4);
+
+//Interrupt 1 Handler
+load(11,5);
+load(12,6);
+
+//Interrupt 2 Handler
+load(13,7);
+load(14,8);
+
+//Interrupt 3 Handler
+load(15,9);
+load(16,10);
+
+//Interrupt 4 Handler
+load(17,11);
+load(18,12);
+
+
+//Interrupt 7 Handler
+load(23,17);
+load(24,18);
+
+//load FAT
+load(5,19);
+
+//load Disk free list
+load(6,20);
+
+
+
+// Process:1(INIT)
+
+[READY_LIST + 0] = 0; 
+
+load(25,21);
+load(26,22);
+load(27,23);
+
+PTBR = 1024; 
+
+PTLR = 4; 
+
+[PTBR + 0] = 25; 
+[PTBR + 1] = "01";
+[PTBR + 2] = 26;
+[PTBR + 3] = "01";
+[PTBR + 4] = 27;
+[PTBR + 5] = "01";
+[PTBR + 6] = 28;     //Stack Page
+[PTBR + 7] = "01";
+
+[READY_LIST + 1] = 2; 
+
+SP = 3 * 512; 
+
+[28 * 512] = 0; 
+
+
+
+alias count S0;
+count=0;
+while(count<64) do
+   [1344+2*count]=-1;
+   [1344+2*count+1]=0;
+   count=count+1;
+endwhile;
+
+count=0;
+while(count<8) do
+   [1536+15+2*count]=-1;
+   [1536+15+2*count+1]=-1;
+   count=count+1;
+endwhile;
+
+   
+   
+
+print "OS End";
+
+ireturn;
+

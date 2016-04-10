@@ -1,0 +1,158 @@
+//**************Implementation of EXEC() system call***************//
+
+
+alias physicalSP S0;
+alias systemcallnumber S1; 
+alias arg1 S2;  
+alias count S3;
+alias fatIndex S4; 
+alias basicBlock S5;
+alias CodeBlocks S6;
+alias codePages S7;
+alias j S8;
+alias currentPID S9; 
+alias sysTabIndex S10;
+alias currentPCB S11;
+
+
+
+physicalSP=([PTBR+2*(SP/512)]*512)+(SP%512);
+systemcallnumber=[physicalSP-1];
+arg1=[physicalSP-3];
+currentPID=(PTBR-1024)/8;
+currentPCB=READY_LIST+32*currentPID;
+
+
+
+if(systemcallnumber==9) then
+	count=0;
+	while(count<64) do
+		if ([FAT+8*count]==arg1) then                                           //check if given file exists
+		    fatIndex=count;                    
+		   	break;
+		endif;
+		count=count+1;
+	endwhile;
+          
+	if(count==64) then                                   
+		[physicalSP-2]=-1;
+		print"No File";
+		ireturn;
+    endif;
+
+    load(1,[FAT+fatIndex*8+2]);                                                      //load basic block in SCRATCHPAD
+	                      
+
+	CodeBlocks=0;
+	count=512;
+	while ((count<1024)&&([count]!=-1)) do                                          //count codeblocks of new process
+		CodeBlocks=CodeBlocks+1;
+	    count=count+1;
+	endwhile;
+
+	
+	codePages=0;
+	count=0;
+	while (count<3) do                                                             //count codepages of existing process
+		if ([PTBR+2*count]!=-1) then
+			codePages=codePages+1;
+		else
+			break;
+		endif;
+		count=count+1;
+	endwhile;
+                                
+	if(codePages>CodeBlocks) then                                                //if codepages greater  then invalidate  extra entries
+		count=CodeBlocks+1;
+		while(count<codePages-1) do
+			[1280+[PTBR+count*2]]=0;
+			[PTBR+count*2]=-1;
+			[PTBR+count*2+1]="00";
+			count=count+2;
+		endwhile;
+	endif;
+       
+         
+	if (CodeBlocks>codePages) then                                          //if codeblocks greater search for extra pages required
+		count=30;
+		j=codePages;
+		while((j<CodeBlocks)&&(count<64)) do                      
+			if ([MEM_LIST+count]==0) then
+				j=j+1;
+			endif;
+			count=count+1;
+		endwhile;
+
+		if (CodeBlocks>j) then                                           //if not enough free pages return -1 
+			[physicalSP-2] =-1;
+			print"Nt Enough page";
+			ireturn;
+		endif;
+
+
+		count=30;
+		j=codePages;
+		while((j<CodeBlocks)&&(count<64)) do                           //if enough free pages entry the page table
+			if ([MEM_LIST+count]==0) then
+				[MEM_LIST+count]=1;
+				[PTBR+2*j]=count;
+				[PTBR+2*j+1]="01";
+				j=j+1;
+			endif;
+			count=count+1;
+		endwhile;
+	endif;
+
+
+
+	count=0;
+	while(count<CodeBlocks) do                                         //load blocks to memory pages
+		load([PTBR+count*2],[512+count]);
+		count=count+1;
+	endwhile;
+
+
+	count=0;
+	while(count<8) do
+		sysTabIndex=[READY_LIST+currentPID*32+15+count*2];	              
+		if([FILE_TABLE+2*sysTabIndex+1]>0) then                              //decrement file count
+			[FILE_TABLE+2*sysTabIndex+1]=[FILE_TABLE+2*sysTabIndex+1]-1;
+		endif;
+
+		if([FILE_TABLE+2*sysTabIndex+1]==0)then
+			[FILE_TABLE+2*sysTabIndex]=-1;
+		endif;
+
+		[READY_LIST+ currentPID*32+15+2*count]=-1;           //invalidate per process open file table
+		[1536 + currentPID*32+15+2*count+1]=-1;
+		count=count+1;
+	endwhile;
+
+	SP=3*512;                             //logical address of starting address of stack when a new process is loaded
+
+	physicalSP=([PTBR+2*(SP/512)]*512)+(SP % 512);
+
+	[physicalSP]=0;
+	[physicalSP-2]=0;
+	print "success";
+
+	ireturn;
+
+endif;
+
+
+//**************IMPLEMENTATION OF GETPID() SYSTEM CALL****************//
+if(systemcallnumber==11) then
+    [physicalSP-2]=currentPID;
+    ireturn;
+endif;
+
+
+
+//*************IMPLEMENTATION OF GETPPID() SYSTEM CALL****************//
+if(systemcallnumber==12) then
+    alias parentPID S12;
+    parentPID=[currentPCB+31];
+    [physicalSP-2]=parentPID;
+    ireturn;
+endif;

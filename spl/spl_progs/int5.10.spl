@@ -1,0 +1,176 @@
+alias parentPhySP S0;
+alias parentPID S1;
+alias systemcallnumber S2;
+alias i S3;
+alias j S4;
+alias childPID S5;
+alias parentPTBR S6;
+alias childPTBR S7;
+alias page S8;
+alias procPTBR S9;
+alias cond S10;
+alias block S11;
+alias parentPCB S12;
+alias childPCB S13;
+alias childPhySP S14;
+
+
+
+parentPhySP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+parentPID = (PTBR - 1024) / 8;
+systemcallnumber = [parentPhySP - 1];
+parentPTBR = PAGE_TABLE + parentPID * 8;
+parentPCB = READY_LIST + parentPID * 32;
+
+
+//***********************Implementation of FORK() system call*************************//
+if (systemcallnumber == 8) then
+	childPID = 0;
+	while ( childPID <  32) do					                             // 32 entries, each of size 32 words
+		if([ READY_LIST + 32*childPID + 1] ==  0) then
+			break;                                                           //got child PID
+		endif;
+		childPID = childPID + 1;			
+	endwhile;
+	
+	if(childPID==32) then                                                     
+		[parentPhySP - 2] = -1;
+		ireturn;
+	endif;
+	
+
+	[READY_LIST + childPID * 32 + 0] = childPID; 
+	
+	childPTBR = PAGE_TABLE + childPID * 8;
+	
+
+	
+	i = 25;
+	page = 25;                                                             //search for free stack page
+	while(page<64) do
+		if([ MEM_LIST + page]==0) then
+			break;
+		endif;
+	page = page + 1;
+	endwhile;
+
+	if(page==64) then                                                       // "No Free Page1";
+		cond = 1;
+		j = childPID;
+		procPTBR = childPTBR;
+		while(cond) do                                                     
+			j = j + 1;
+			if(j==childPID) then                                            //single process then halt
+				halt;
+			endif;
+			if(j>=32) then                                                  //round robin
+				j = 0;
+			endif;
+			if([READY_LIST + 32*j]==0) then
+				continue;
+			endif;
+			procPTBR = PAGE_TABLE + 8*j;
+			i = procPTBR;
+			while(i<procPTBR+6) do                                         //search for swap block
+				if([i+1]=="01") then
+					block = 448;
+					while(block<512) do
+						if([DISK_LIST+block]==0) then
+							page = [i];
+							store([i],block);
+							[DISK_LIST+block] = 1;
+							[i] = block;
+							[i + 1] = "00";
+							cond = 0;                                     // to break out loop cond=0
+							break;
+						endif;
+						block = block + 1;
+					endwhile;
+
+					if(block==512) then                                  //no swap block return -1
+						[parentPhySP - 2] = -1;
+						ireturn;
+					endif;
+					break;
+				endif;
+
+				if([i+1]=="10"&&[MEM_LIST+[i]]==1) then
+					[i+1]="00";
+				endif;
+				if([i+1]=="11"&&[MEM_LIST+[i]]==1) then
+					[i+1]="01";
+					continue;
+				endif;
+				i = i + 2;
+			endwhile;
+		endwhile;
+	endif;
+	
+	
+	
+	[ MEM_LIST + page] = 1;                                             //set it used
+	[childPTBR + 6] = page;
+	[childPTBR + 7] = "01";                                             //copy page number and set bit
+	i = 0;
+	while(i<512) do                      
+		[page*512 + i] = [[parentPTBR + 6]*512 + i];                    //copy stack page
+		i = i + 1;
+	endwhile;
+	
+
+
+	i=0;
+	j=0;
+	while(i<3) do
+		[childPTBR + j] = [parentPTBR + j];                                          //increase the memory free list to show it shared
+		[childPTBR + j + 1] = [parentPTBR + j + 1];
+		if([childPTBR + j + 1]=="01" || [childPTBR + j + 1]=="11") then
+			[MEM_LIST + [childPTBR + j]] = [MEM_LIST + [childPTBR + j]] + 1;
+		endif;
+		if(([childPTBR + j + 1]=="00" || [childPTBR + j + 1]=="10")&&[childPTBR + j]>=448) then       //increase the disk list
+			[DISK_LIST + [childPTBR + j]] = [DISK_LIST + [childPTBR + j]] + 1;
+		endif;
+		j = j + 2;
+		i = i + 1;
+	endwhile;
+
+	store(6,20);                                                     //store back
+
+	
+	childPCB = READY_LIST + childPID * 32;
+	
+	[childPCB + 5] = childPTBR;
+	[childPCB + 4] = [parentPhySP];
+	[ childPCB + 3] = SP - 1;
+	[ childPCB + 2 ] = BP;					
+	[ childPCB + 6 ] = [ parentPCB + 6 ];	
+	[ childPCB + 7 ] = R0;					
+	[ childPCB + 8 ] = R1;					
+	[ childPCB + 9 ] = R2;					                             //	Save the Registers
+	[ childPCB + 10 ] = R3;					
+	[ childPCB + 11 ] = R4;					
+	[ childPCB + 12 ] = R5;					
+	[ childPCB + 13 ] = R6;					
+	[ childPCB + 14 ] = R7;					
+	[ childPCB + 31 ] = parentPID;			
+	
+	i = 0;
+	
+	while(i<16) do
+		[childPCB + 15 +  i] = [parentPCB + 15 +  i];                        //copy per process page table
+		[childPCB + 16 +  i] = [parentPCB + 16 +  i];
+		if([childPCB + 15 +  i]!=-1) then
+			[[childPCB + 15 +  i]*2+1]=[[childPCB + 15 +  i]*2+1]+1;
+		endif;
+		i = i + 2;
+	endwhile;
+
+	[childPCB + 1] = 1;                                                      //set to ready
+	
+	[parentPhySP - 2] = childPID;                                            //return childPID to parent
+	
+	childPhySP = ([childPTBR + 2 * ((SP-1) / 512)] * 512) + ((SP-1) % 512);
+	[childPhySP - 1] = -2;                                                     //return -2 to child
+	
+	ireturn;
+endif;

@@ -1,0 +1,105 @@
+//print "INSIDE INT4";
+
+//IMPLMENTATION OF WRITE() SYSTEM CALL
+
+alias physicalSP S0;
+physicalSP=([1024+2*(SP/512)]*512)+(SP%512);
+
+alias systemcallnumber S1;                                       //Get the system call number
+systemcallnumber=[physicalSP-1];
+
+alias returnvalue S2;                                            //Empty register to store return value
+
+alias arg1 S3;                                         
+arg1=[physicalSP-3];
+
+alias fd S4;                                            
+fd=[physicalSP-4];
+
+alias count S5;
+
+
+if(systemcallnumber==5) then
+    count=0;
+    //print "In write()";
+     while(count<8) do
+         if(fd==count) then                         //checking if file descriptor is valid
+              break;
+         endif;
+         count=count+1;
+     endwhile;
+     
+     if(count==8) then
+         returnvalue=-1;                                      //if not valid return -1 as failure
+         [physicalSP-2]=returnvalue;
+         ireturn;
+     endif;
+    
+     
+     alias currentPID S6;
+     currentPID=(PTBR-1024)/8;
+     
+     alias systemTabIndex S7;
+     
+     if([1536+32*currentPID+15+2*fd]==-1) then             //checking per-process open file table and getting system-wide open
+         returnvalue=-1;                                            //file table index if it is valid
+         [physicalSP-2]=returnvalue;
+         ireturn;
+     else
+         systemTabIndex=[1536+32*currentPID+15+2*fd];      //if valid got system-wide open file table
+     endif;
+           
+    
+     alias lseekPos S8;
+     lseekPos=[1536+32*currentPID+15+2*fd+1];          //store the LSEEK position
+     
+     alias fatIndex S9;
+     fatIndex=[1344+2*systemTabIndex];                            //get the FAT Index from system wide open file table indexing
+     
+     alias basicBlock S10;
+     basicBlock=[FAT+8*fatIndex+2];                             //got the Basic Block
+     
+     load(1,basicBlock);
+     
+     alias dataBlock S11;
+     
+     if([512+(lseekPos/512)]==-1) then                  //this entry if =-1 that means we have to allocate a new data block
+             count=24;
+             while(count<448) do
+                  if([3072+count]==0) then                             //got the free block for data block
+                       dataBlock=count;                            //got the data block
+                       [3072+count]=1;                             //make the entry for that free block in disk free list 1;
+                       [512+(lseekPos/512)]=dataBlock;  //add new  block in basic block entry
+                       store(1,basicBlock);                        // save modified basic block to disk
+                       [FAT+8*fatIndex+1]=[FAT+8*fatIndex+1]+512;   //increment file size in FAT entry by 512
+                       store(5,19);                                 //save modified FAT to disk
+                       store(6,20);                                 //save modified disk free list to disk
+                       break;
+                   endif;
+                   count=count+1;
+              endwhile;
+              if(count==448) then
+                  returnvalue=-1;
+                  [physicalSP-2]=returnvalue;
+                  ireturn;
+              endif;     
+      else
+          dataBlock=[512+(lseekPos/512)];                 //finally we got data block from both methods
+      endif;
+      
+      load(1,dataBlock);                                            //load the dat block in which to be written
+      [512+(lseekPos%512)]=arg1;                  //find offset in datablock and write the argument in that
+      
+      store(1,dataBlock);                                          //save data Block back to disk
+      
+     
+      [1536+32*currentPID+15+2*fd+1]=[1536+32*currentPID+15+2*fd+1]+1;  //increment LSEEK by 1
+      
+      returnvalue=0;
+      [physicalSP-2]=returnvalue;
+      //print"success";
+      
+      ireturn;
+  
+endif;      
+      

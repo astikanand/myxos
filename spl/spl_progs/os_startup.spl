@@ -1,0 +1,130 @@
+
+print "OS START";
+alias count S0;
+
+
+load(7,1);                             //OS exception Handler
+load(8,2);
+
+load(9,3);                             //Timer interrupt
+load(10,4);
+
+load(11,5);                            //Interrupt 1 Handler
+load(12,6);
+
+load(13,7);                            //Interrupt 2 Handler
+load(14,8);
+
+load(15,9);                            //Interrupt 3 Handler
+load(16,10);
+
+load(17,11);                           //Interrupt 4 Handler
+load(18,12);
+
+load(19,13);                           //Interrupt 5 Handler
+load(20,14);
+
+load(21,15);                           //Interrupt 6 Handler
+load(22,16);
+
+load(23,17);                           //Interrupt 7 Handler
+load(24,18);
+
+load (5,19);                          //load FAT table
+
+load(6,20);                           //load disk free list
+
+
+
+count=0;                 
+while(count<=24) do             //pages 0-24 are reserved for operating system and 25-28 are reserved for INIT hence they are
+     [MEM_LIST+count]=1;                   //needed to be initialised  to be 1 indicating used
+     count=count+1;
+endwhile;
+
+while(count<=63) do           //pages from 29-63 are free for process uses and hence needed to be nitialised 0 indicating unused
+     [MEM_LIST+count]=0;
+     count=count+1;
+endwhile;
+
+
+count = 448;
+while (count < 512) do
+	[DISK_LIST + count] = 0;
+	count = count + 1;
+endwhile;
+
+
+count=0;
+while (count < 64) do		                // Initialize the System Wide Open File Table	
+	[FILE_TABLE+2*count+0]=-1;	
+	[FILE_TABLE+2*count+1]= 0;	
+	count=count+1;		
+endwhile;	
+
+
+
+count = 0;
+while ( count <  32) do					           // Initialize All PCB with State 0
+	[ READY_LIST + 32*count + 1] =  0;	
+	count = count + 1;					
+endwhile;	
+
+
+
+store(6,20);
+
+
+PTBR = PAGE_TABLE; 			                    // Set the Address of Page Table
+PTLR = 4; 				                        // Set the length of Page Table
+SP = 3 * 512; 			                        // Set the start of the Stack
+[28 * 512] = 0;                   // Set up the IP value for INIT as the top of stack process is started by system IP is set as 0
+						
+
+	
+
+
+[PTBR + 0] = 21; 		                    //setting the INIT process for demand paging
+[PTBR + 1] = "00"; 		
+[PTBR + 2] = 22; 		
+[PTBR + 3] = "00"; 		
+[PTBR + 4] = 23; 		 
+[PTBR + 5] = "00"; 		
+	
+
+
+
+	
+[PTBR + 6] = 25; 		                 //stack page
+[PTBR + 7] = "01"; 		
+[MEM_LIST + 25]=1;	
+	
+	
+
+[READY_LIST + 0] = 0; 	                   //setting process
+[READY_LIST + 1] = 2; 	
+[READY_LIST + 4 ] = 0;                  // Save IP of current process in the PCB from the stack
+[READY_LIST + 5 ] = PTBR;		
+[READY_LIST + 6 ] = PTLR;		
+[READY_LIST + 7 ] = R0;		
+[READY_LIST + 8 ] = R1;		
+[READY_LIST + 9 ] = R2;		
+[READY_LIST + 10 ] = R3;		
+[READY_LIST + 11 ] = R4;		
+[READY_LIST + 12 ] = R5;
+[READY_LIST  + 13 ] = R6;		
+[READY_LIST  + 14 ] = R7;		
+
+
+
+[READY_LIST + 15 + 0] = -1;                  // Setting the Per Process File Table Entries as Invalid
+[READY_LIST + 15 + 2] = -1;
+[READY_LIST + 15 + 4] = -1;
+[READY_LIST + 15 + 6] = -1;
+[READY_LIST + 15 + 8] = -1;
+[READY_LIST + 15 + 10] = -1;
+[READY_LIST + 15 + 12] = -1;
+[READY_LIST + 15 + 14] = -1;
+
+[READY_LIST + 31] = 0; 	                     // Sets the Parent PID as 0 
+                                                 

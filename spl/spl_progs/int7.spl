@@ -1,0 +1,183 @@
+alias physicalSP S0;
+alias systemcallnumber S1;
+alias currentPID S2;
+alias newPID S3;
+alias currentPCB S4;
+alias newPCB S5;
+alias currentPTBR S6;
+alias page S7;
+alias newphysicalSP S8;
+alias count S9;
+alias sysTabIndex S10;
+alias waitingPID S14;
+
+physicalSP=([PTBR+2*(SP/512)]*512)+(SP%512);
+systemcallnumber=[physicalSP-1];
+currentPID=(PTBR-1024)/8;
+currentPTBR=PAGE_TABLE+currentPID*8;
+currentPCB=READY_LIST+32*currentPID;
+
+
+//**********************IMPLEMENTATION of EXIT() system call************************//
+if (systemcallnumber==10) then
+        [currentPCB+1]=0; 	                     //set the process to be terminated
+	count=0;
+	while (count<32) do
+	      if([READY_LIST+32*count+1]==1) then
+		      break;
+	      endif;
+	      count=count+1;
+	endwhile;
+
+	if(count==32) then                         //no ready process is available; halt
+		halt;
+	endif;
+
+	count=0;
+	while (count<32) do	
+	     if([READY_LIST+32*count+1]==(currentPID+100)) then
+		   [READY_LIST+32*count+1]=1;
+	     endif;
+	     count=count+1;
+	endwhile;
+
+	newPCB=READY_LIST+32*count;                          //count is still having the PID of a ready to run process
+	newPID=count;
+
+	count=0;
+        while(count<8) do                                      //invalidate per process open file table entry
+            if([currentPCB+15+2*count]==-1) then
+                 count=count+1;
+                 continue;
+             endif;
+
+             sysTabIndex=[currentPCB+15+2*count];                              //decrement file count by 1
+             [FILE_TABLE+2*sysTabIndex+1]=[FILE_TABLE+2*sysTabIndex+1]-1;
+
+             if([FILE_TABLE+2*sysTabIndex+1]==0) then                         
+                    [FILE_TABLE+2*sysTabIndex+0]=-1;
+             endif;
+
+             [currentPCB+15+2*count]=-1;
+             [currentPCB+15+2*count+1]=-1;
+
+            count=count+1;
+         endwhile;
+
+
+        
+        count=0;        
+        while(count<6) do
+            if([currentPTBR+2*count+0] >25 &&  [currentPTBR+2*count+0]<64 ) then      //meaning that the the physical page is a memory page
+                [MEM_LIST+[currentPTBR+2*count]]= [MEM_LIST+[currentPTBR+2*count]] - 1; 
+            endif;
+            
+            if([currentPTBR+2*count+0] >447 &&  [currentPTBR+2*count+0]<511 ) then         // physical page is a swap area block from the disk
+                [DISK_LIST+[currentPTBR+2*count]]= [DISK_LIST+[currentPTBR+2*count]] - 1; 
+            endif; 
+
+            [currentPTBR+2*count+0]=-1;
+            [currentPTBR+2*count+1]="00";
+        
+            count=count+1;
+        endwhile;
+        
+        store(6,20);  //commiting the disk free list back in the disk
+endif;
+	
+
+
+
+//**********************IMPLEMENTATION of WAIT() system call************************//
+if (systemcallnumber== 13) then
+	waitingPID = [physicalSP - 3];
+	
+	if(waitingPID<0 || waitingPID>31) then
+	     [physicalSP-2]=-1;
+	     ireturn;
+	endif;
+	
+	if(currentPID == waitingPID) then
+	     [physicalSP-2]=-1;
+	     ireturn;
+	endif;
+	
+
+	if([READY_LIST+32*waitingPID+1]==0) then
+		[physicalSP-2]=-1;
+		ireturn;
+	endif;
+
+	
+	currentPCB = READY_LIST + 32 * currentPID;
+	[ currentPCB + 1 ]= waitingPID + 100;	       //Change the state to wait
+	[ currentPCB + 2 ] = BP;	
+	[ currentPCB + 3 ] = SP - 1; 	               // Save SP-1 coz interrupt pushed the IP in Stack
+	[ currentPCB + 4 ] = [ physicalSP ];
+	[ currentPCB + 5 ] = PTBR;		
+	[ currentPCB + 6 ] = PTLR;		 
+	[ currentPCB + 7 ] = R0;		
+	[ currentPCB + 8 ] = R1;		
+	[ currentPCB + 9 ] = R2;
+	[ currentPCB + 10 ] = R3;		
+	[ currentPCB + 11 ] = R4;		
+	[ currentPCB + 12 ] = R5;		
+	[ currentPCB + 13 ] = R6;		
+	[ currentPCB + 14 ] = R7;		
+	
+
+	count=0;
+	while (count<32) do
+	    if ([READY_LIST+32*count+1]==1) then
+	          break;
+           endif;
+	   count=count+1;
+	   if(count==32) then
+		halt;
+	   endif;
+	endwhile;
+	newPID=count;
+
+endif;
+
+
+if(systemcallnumber==10 || systemcallnumber==13) then
+
+	//****************Resume the New Process Found***************//	
+	newPCB=READY_LIST+32*newPID;
+	[ newPCB + 1 ] = 2; 	// Set STATE to READY
+	BP   = [ newPCB + 2 ];
+	SP   = [ newPCB + 3 ]; 
+	PTBR = [ newPCB + 5 ];	
+	PTLR = [ newPCB + 6 ];	
+	R0   = [ newPCB + 7 ];	
+	R1   = [ newPCB + 8 ];	
+	R2   = [ newPCB + 9 ];	
+	R3   = [ newPCB + 10 ]; 	
+	R4   = [ newPCB + 11 ]; 	
+	R5   = [ newPCB + 12 ]; 	
+	R6   = [ newPCB + 13 ]; 	
+	R7   = [ newPCB + 14 ];	
+	SP = SP + 1; 			
+	
+
+	newphysicalSP = ([currentPTBR+2*(SP/512)]*512)+(SP % 512); 
+	[newphysicalSP]=[ newPCB+4]; 
+	[physicalSP-2] = 0;
+	ireturn;
+endif;
+
+
+
+//**********************IMPLEMENTATION of WAIT() system call************************//
+if (systemcallnumber==14) then
+	count=0;
+	while (count<32) do
+	     if([READY_LIST+ 32*count+1]==(currentPID+100)) then
+	         [READY_LIST + 32 *count +1] = 1;
+	     endif;
+	     count=count+1;
+	endwhile;
+	[physicalSP - 2] = 0;
+	ireturn;
+endif;
